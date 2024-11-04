@@ -98,7 +98,10 @@ Additionally, the following dataset parameters can be adjusted:
 - **`base_xml_files`**: List of XML files used as templates for generating samples.
 - **`output_dirs`**: List of directories containing existing output data.
 - **`required_columns`**: List of columns from `DailyResults.csv` required for model output.
-- **`observed_data_path`**: Path to the CSV file containing observed data for comparison.
+- **`observed_data_path`**: Path to the CSV file containing observed data for comparison. The CSV file should be formatted with columns in the following order: `['Year', 'Jday', 'Variable']`. Specifically:
+  - `Year`: Represents the calendar year of each observation (e.g., 2020, 2021). This helps to track the temporal sequence across multiple years.
+  - `Jday`: Stands for Julian day, indicating the specific day of the year (from 1 to 365 or 366 for leap years). This allows for daily granularity in tracking observations.
+  - `Variable`: Represents the observed values of interest, such as runoff, soil moisture, or other environmental measurements. This column contains the data points for the specific parameter being analyzed, ensuring a consistent format across all observations.
 - **`year_range`**: List specifying the start and end year for data filtering.
 - **`params_range`**: Dictionary specifying the range of values for XML parameters to be modified during augmentation.
 
