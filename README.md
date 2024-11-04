@@ -1,4 +1,4 @@
-# User Manual for the VELMA-ML Code
+# Guide for the VELMA-ML
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@
 
 ## 1. Introduction
 
-This user manual describes the structure, key functions, and usage of the code for the VELMA-ML project. It will help users understand how to adjust parameters for their own purposes and how to use the functions effectively. The code is primarily designed to train machine learning models, specifically a main model and a surrogate model, for simulating hydrological outputs and estimating parameters.
+This guide describes the structure, key functions, and usage of the code for the VELMA-ML project. It will help users understand how to adjust parameters for their own purposes and how to use the functions effectively. The code is primarily designed to train machine learning models, specifically a main model and a surrogate model, for simulating hydrological outputs and estimating parameters.
 
 ## 2. Code Structure Overview
 
