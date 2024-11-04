@@ -1,175 +1,115 @@
-# **Model Usage Manual**
+# User Manual for the VELMA Simulation Code
 
-This manual provides a detailed explanation of the model architecture, the custom functions defined in the code, and instructions for usage. The main focus is on understanding how to adjust parameters, run the code, and customize it for your purposes.
+## Table of Contents
 
----
+- [1. Introduction](#1-introduction)
+- [2. Code Structure Overview](#2-code-structure-overview)
+- [3. Key Functions](#3-key-functions)
+  - [3.1 Data Loading and Processing Functions](#31-data-loading-and-processing-functions)
+  - [3.2 Data Augmentation Functions](#32-data-augmentation-functions)
+  - [3.3 Model Training and Evaluation Functions](#33-model-training-and-evaluation-functions)
+  - [3.4 Optimization and Visualization Functions](#34-optimization-and-visualization-functions)
+  - [3.5 XML Handling and Modification Functions](#35-xml-handling-and-modification-functions)
+  - [3.6 Java Process Management Functions](#36-java-process-management-functions)
+  - [3.7 Utility Functions](#37-utility-functions)
+- [4. Adjustable Parameters in Main Function](#4-adjustable-parameters-in-main-function)
+- [5. Usage Example](#5-usage-example)
 
-## **Table of Contents**
+## 1. Introduction
 
-1. [Model Architecture](#model-architecture)
-   - [MainModel](#mainmodel)
-     - [Image Feature Extraction](#image-feature-extraction-cnn)
-     - [Time Series Feature Extraction](#time-series-feature-extraction-lstm)
-     - [XML Feature Extraction](#xml-feature-extraction)
-     - [Fully Connected Layers](#fully-connected-layers)
-     - [VELMA Parameter Prediction](#velma-parameter-prediction)
-   - [SurrogateModel](#surrogatemodel)
-     - [LSTM for Time Series](#lstm-for-time-series)
-     - [Fully Connected Layers](#fully-connected-layers-surrogatemodel)
-2. [Custom Functions](#custom-functions)
-   - [load_asc_file](#load_asc_file)
-   - [load_images_from_paths](#load_images_from_paths)
-   - [augment_images](#augment_images)
-   - [load_spatial_model_data](#load_spatial_model_data)
-   - [parse_xml_for_params](#parse_xml_for_params)
-   - [run_java_jar](#run_java_jar)
-3. [Main Function Parameters](#main-function-parameters)
-4. [Usage Instructions](#usage-instructions)
+This user manual describes the structure, key functions, and usage of the code for the VELMA simulation project. It will help users understand how to adjust parameters for their own purposes and how to use the functions effectively. The code is primarily designed to train machine learning models, specifically a main model and a surrogate model, for simulating hydrological outputs and estimating parameters.
 
----
+## 2. Code Structure Overview
 
-## **Model Architecture**
+The code consists of several Python functions and classes, primarily focused on:
 
-The code contains two primary models: **MainModel** and **SurrogateModel**. These models work together to predict the VELMA parameters and approximate the output of the VELMA hydrological model. Below is a detailed breakdown of the architecture.
+- Loading various types of input data (raster images, time series, XML parameters).
+- Augmenting data for model training.
+- Creating models for image, time series, and parameter prediction.
+- Training the models, evaluating their performance, and optimizing parameters.
 
-### **MainModel**
+Key components:
 
-The `MainModel` is responsible for predicting VELMA parameters using three different inputs: images, time series, and XML parameters. Each type of input is processed separately by feature extraction networks, which are then combined to predict the desired parameters.
+- Data Loading Functions
+- Image and Time Series Feature Extractors
+- Model Definition (Main Model and Surrogate Model)
+- Training and Evaluation Functions
 
-#### **1. Image Feature Extraction (CNN)**
+## 3. Key Functions
 
-- **Function**: `MultiLayerImageFeatureExtractor`
-- **Purpose**: Extracts features from raster images (e.g., elevation, soil type) using a multi-layer Convolutional Neural Network (CNN).
-- **Key Functions**:
-  - `nn.Conv2d`: Performs 2D convolution to detect spatial patterns in the image.
-  - `nn.ReLU`: Introduces non-linearity.
-  - `nn.MaxPool2d`: Reduces spatial dimensions.
-  - `nn.AdaptiveAvgPool2d`: Ensures the final output feature map has a consistent size.
-  - `nn.Linear`: Flattens and maps the image features into a fixed-size vector.
+### 3.1 Data Loading and Processing Functions
 
-#### **2. Time Series Feature Extraction (LSTM)**
+- ``: Reads an `.asc` file and returns its header and data.
+- ``: Loads images from given sample paths, each containing multiple channels (DEM, land cover, soil parameters).
+- `` and ``: Load precipitation and temperature time series data for specified years, handling both single-location and multi-location data models.
 
-- **Function**: `TimeSeriesFeatureExtractor`
-- **Purpose**: Processes time series data (e.g., rainfall, temperature) using a Long Short-Term Memory (LSTM) network to capture temporal dependencies.
-- **Key Functions**:
-  - `nn.LSTM`: Captures short- and long-term dependencies in sequential data.
-  - `nn.LayerNorm`: Normalizes the LSTM output.
-  - `nn.Linear`: Maps the LSTM output to a fixed-size feature vector.
+### 3.2 Data Augmentation Functions
 
-#### **3. XML Feature Extraction**
+- ``: Augments image data by applying transformations, then saves and returns paths to the augmented files.
+- ``: Augments precipitation and temperature data by applying random scaling and offsets, then saves and returns paths to the files.
+- ``: Combines image, time series, and parameter augmentations to generate XML files with new configurations.
 
-- **Function**: `nn.Linear` (within `MainModel`)
-- **Purpose**: Extracts features from XML parameters by passing them through a fully connected layer.
-- **Key Functions**:
-  - `nn.Linear`: Maps the raw XML parameters to a feature vector.
+### 3.3 Model Training and Evaluation Functions
 
-#### **4. Fully Connected Layers**
+- ``: Combines image, time series, and XML features to generate a watershed feature vector and predict VELMA parameters.
+- ``: Used to approximate VELMA's outputs using time series data and VELMA parameters as input.
+- ``: Trains both the surrogate and main models sequentially on a given data loader.
+- ``: Calculates the MSE loss between predicted outputs and observed data, accounting for leap years and varying intervals.
 
-- **Function**: `nn.Sequential` (within `MainModel`)
-- **Purpose**: Combines the feature vectors extracted from the image, time series, and XML inputs into a single vector. This vector is then passed through a series of fully connected layers to predict the VELMA parameters.
-- **Key Functions**:
-  - `nn.Linear`: Performs linear transformations.
-  - `nn.ReLU`: Introduces non-linearity.
-  - `nn.Dropout`: Prevents overfitting by randomly deactivating neurons during training.
+### 3.4 Optimization and Visualization Functions
 
-#### **5. VELMA Parameter Prediction**
+- ``: Optimizes model parameters to fit observed data using the surrogate model and visualizes predictions vs. observed data.
+- ``: Modifies an XML configuration with optimized parameters, runs the VELMA model, and visualizes outputs vs. observed data.
 
-- **Function**: `_build_specific_branch`
-- **Purpose**: Predicts the VELMA parameters using a fully connected network with multiple layers.
-- **Key Functions**:
-  - `nn.Linear`: Predicts the VELMA parameters.
-  - `torch.sigmoid`: Ensures the predicted parameters are within a normalized range (0-1), which are later scaled to the required ranges for the specific parameters.
+### 3.5 XML Handling and Modification Functions
 
----
+- ``: Batch updates the start and end years in a list of XML files.
+- ``: Updates XML parameters and synchronizes them with an internal mapping.
+- ``: Parses XML files and extracts sample information, including file paths and model settings.
 
-### **SurrogateModel**
+### 3.6 Java Process Management Functions
 
-The `SurrogateModel` simulates the behavior of the VELMA hydrological model by approximating its output. It takes the predicted VELMA parameters and time series inputs to predict hydrological variables such as runoff, soil moisture, and other outputs.
+- ``: Runs the VELMA Java program with optional memory limit, captures output in a log, and retrieves the output data path.
 
-#### **1. LSTM for Time Series**
+### 3.7 Utility Functions
 
-- **Function**: `nn.LSTM`
-- **Purpose**: Processes the input time series data (rainfall and temperature) and captures the temporal dependencies.
-- **Key Functions**:
-  - `nn.LSTM`: Captures temporal dependencies in the time series data.
+- `` and ``: Normalize or reverse-normalize data using specified scalers.
+- ``: Checks if a year is a leap year.
 
-#### **2. Fully Connected Layers (SurrogateModel)**
+## 4. Adjustable Parameters in Main Function
 
-- **Function**: `nn.Sequential`
-- **Purpose**: After the time series and predicted VELMA parameters are combined, the concatenated features are passed through fully connected layers to generate the model's output.
-- **Key Functions**:
-  - `nn.Linear`: Transforms the concatenated feature vector into the output predictions.
-  - `nn.ReLU`: Introduces non-linearity.
+In the `__main__` section, users can adjust the following parameters:
 
----
+- ``: Total number of training epochs (default: 100).
+- ``: Size of each batch for training and data loading (default: 64).
+- ``: Learning rate for the optimizer (default: 1e-3).
+- ``: Load pre-trained models if available (default: False).
+- ``: Path to save trained models (default: `./trained_models/model`).
+- ``: Path to the VELMA simulation JAR file (default: `Velma.jar`).
+- ``: Maximum memory allocation for Java process (e.g., `2g` for 2 GB).
+- ``: Random seed for reproducibility (default: 43).
 
-## **Custom Functions**
+Additionally, the following dataset parameters can be adjusted:
 
-### **load_asc_file**
-- **Purpose**: Dynamically parses the header of `.asc` files and returns the raster data as a NumPy array.
-- **How It Works**: This function reads the header information, processes metadata (e.g., number of rows/columns, no-data values), and loads the raster data into memory.
+- ``: Boolean flag to indicate whether to use existing data.
+- ``: Boolean flag to indicate whether to generate new data.
+- ``: Tuple specifying the number of augmentations for images, time series, and parameters.
+- ``: Number of samples to select using Latin Hypercube Sampling.
+- ``: List of XML files used as templates for generating samples.
+- ``: List of directories containing existing output data.
+- ``: List of columns from `DailyResults.csv` required for model output.
+- ``: Path to the CSV file containing observed data for comparison.
+- ``: List specifying the start and end year for data filtering.
+- ``: Dictionary specifying the range of values for XML parameters to be modified during augmentation.
 
-### **get_latest_asc_file**
-- **Purpose**: Retrieves the latest `.asc` file from a specified folder.
-- **How It Works**: Searches through a folder for `.asc` files and returns the file with the latest modification time.
+Users can modify these parameters to change the behavior of the data generation, augmentation, and training processes.
 
-### **load_images_from_paths**
-- **Purpose**: Loads image data from multiple sample paths, each containing multiple subfolders with `.asc` files for different image channels (e.g., DEM, soil coverage, soils).
-- **How It Works**: This function loads the `.asc` files, checks that all channels have matching shapes, and stacks them into a multi-channel image tensor.
+## 5. Usage Example
 
-### **augment_images**
-- **Purpose**: Augments image datasets by adding noise or duplicating images to increase the number of samples.
-- **How It Works**: Depending on the user's preference, Gaussian noise is added to the images, or the samples are simply duplicated to increase the dataset size.
+Below is an example of how to run the script from the command line:
 
-### **load_spatial_model_data**
-- **Purpose**: Loads spatial model data from CSV files (e.g., Site files) and calculates the average precipitation and temperature time series.
-- **How It Works**: This function parses CSV files to extract time series data (precipitation and temperature) and returns the average values across all sites.
+```bash
+python your_script.py --epochs 200 --batch_size 32 --lr 0.0005 --load_existing --save_path "./trained_models/model" --jar_file "path/to/Velma.jar" --max_memory "4g"
+```
 
-### **parse_xml_for_params**
-- **Purpose**: Parses an XML file to extract numerical and boolean parameters used for the VELMA model.
-- **How It Works**: This function recursively traverses the XML tree, retrieves relevant parameters, and returns them as NumPy arrays.
-
-### **run_java_jar**
-- **Purpose**: Runs the VELMA Java program and returns the output data path and log file path.
-- **How It Works**: This function executes a Java command-line program (`VelmaSimulatorCmdLine`) and captures the output path from the generated log file.
-
----
-
-## **Main Function Parameters**
-
-The main function supports several command-line arguments that control the model’s behavior. Below is a breakdown of the key parameters:
-
-- **`--epochs`** (default: 100):  
-  Number of training epochs. Increasing this value will train the model for more iterations but will increase training time.
-
-- **`--batch_size`** (default: 32):  
-  Number of samples to process in each batch during training.
-
-- **`--lr`** (default: `1e-3`):  
-  Learning rate for the optimizer. Lower values slow down training but can lead to better convergence.
-
-- **`--save_path`** (default: `"./trained_models/model"`):  
-  Directory where the trained models will be saved.
-
-- **`--num_conv_layers`** (default: 4):  
-  Number of convolutional layers used in the image feature extraction network.
-
-- **`--visualize_samples`** (default: 5):  
-  Number of samples to visualize during evaluation.
-
-- **`--seed`** (default: 43):  
-  Random seed for reproducibility. Using the same seed ensures that results are consistent across different runs.
-
----
-
-## **Usage Instructions**
-
-### **Setup**
-
-1. **Prepare Dependencies**:  
-   Ensure that all necessary libraries such as `torch`, `numpy`, and `pandas` are installed. You also need to have access to the `velma.jar` file, which should be placed in the same directory as the code.
-
-2. **Run the Main Script**:  
-   The main script is designed to be run from the command line. You can use the following command to start training:
-   ```bash
-   python main.py --epochs 100 --batch_size 32 --lr 0.001 --save_path "./trained_models/model"
+In this example, the model will train for 200 epochs, using a batch size of 32 and a learning rate of 0.0005. Pre-trained models (if available) will be loaded, and model checkpoints will be saved in the specified path.
