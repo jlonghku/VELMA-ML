@@ -5,16 +5,16 @@
 - [1. Introduction](#1-introduction)
 - [2. Code Structure Overview](#2-code-structure-overview)
 - [3. Main Function Workflow](#3-main-function-workflow)
-- [4. Key Functions](#4-key-functions)
-  - [4.1 Data Loading and Processing Functions](#41-data-loading-and-processing-functions)
-  - [4.2 Data Augmentation Functions](#42-data-augmentation-functions)
-  - [4.3 Model Training and Evaluation Functions](#43-model-training-and-evaluation-functions)
-  - [4.4 Optimization and Visualization Functions](#44-optimization-and-visualization-functions)
-  - [4.5 XML Handling and Modification Functions](#45-xml-handling-and-modification-functions)
-  - [4.6 Java Process Management Functions](#46-java-process-management-functions)
-  - [4.7 Utility Functions](#47-utility-functions)
-- [5. Adjustable Parameters in Main Function](#5-adjustable-parameters-in-main-function)
-- [6. Usage Example](#6-usage-example)
+- [4. Adjustable Parameters in Main Function](#4-adjustable-parameters-in-main-function)
+- [5. Usage Example](#5-usage-example)
+- [6. Key Functions](#6-key-functions)
+  - [6.1 Data Loading and Processing Functions](#61-data-loading-and-processing-functions)
+  - [6.2 Data Augmentation Functions](#62-data-augmentation-functions)
+  - [6.3 Model Training and Evaluation Functions](#63-model-training-and-evaluation-functions)
+  - [6.4 Optimization and Visualization Functions](#64-optimization-and-visualization-functions)
+  - [6.5 XML Handling and Modification Functions](#65-xml-handling-and-modification-functions)
+  - [6.6 Java Process Management Functions](#66-java-process-management-functions)
+  - [6.7 Utility Functions](#67-utility-functions)
 
 ## 1. Introduction
 
@@ -62,48 +62,8 @@ The main function of the script follows the workflow below:
 
 11. **Run and Validate Model**: Finally, the run_and_validate_model function modifies the XML configuration with optimized parameters, runs the VELMA model using the Java JAR file, and compares the model outputs to observed data.
 
-## 4. Key Functions
 
-### 4.1 Data Loading and Processing Functions
-
-- **load_asc_file**: Reads an .asc file and returns its header and data.
-- **load_images_from_samples**: Loads images from given sample paths, each containing multiple channels (DEM, land cover, soil parameters).
-- **load_time_series_from_path** and **load_time_series_from_paths**: Load precipitation and temperature time series data for specified years, handling both single-location and multi-location data models.
-
-### 4.2 Data Augmentation Functions
-
-- **augment_and_save_images**: Augments image data by applying transformations, then saves and returns paths to the augmented files.
-- **augment_and_save_time_series**: Augments precipitation and temperature data by applying random scaling and offsets, then saves and returns paths to the files.
-- **augment_samples**: Combines image, time series, and parameter augmentations to generate XML files with new configurations.
-
-### 4.3 Model Training and Evaluation Functions
-
-- **MainModel**: Combines image, time series, and XML features to generate a watershed feature vector and predict VELMA parameters.
-- **SurrogateModel**: Used to approximate VELMA's outputs using time series data and VELMA parameters as input.
-- **train_model**: Trains both the surrogate and main models sequentially on a given data loader.
-- **calculate_mse_loss**: Calculates the MSE loss between predicted outputs and observed data, accounting for leap years and varying intervals.
-
-### 4.4 Optimization and Visualization Functions
-
-- **optimize_and_visualize**: Optimizes model parameters to fit observed data using the surrogate model and visualizes predictions vs. observed data.
-- **run_and_validate_model**: Modifies an XML configuration with optimized parameters, runs the VELMA model, and visualizes outputs vs. observed data.
-
-### 4.5 XML Handling and Modification Functions
-
-- **modify_years**: Batch updates the start and end years in a list of XML files.
-- **update_param**: Updates XML parameters and synchronizes them with an internal mapping.
-- **get_samples**: Parses XML files and extracts sample information, including file paths and model settings.
-
-### 4.6 Java Process Management Functions
-
-- **run_java_jar**: Runs the VELMA Java program with optional memory limit, captures output in a log, and retrieves the output data path.
-
-### 4.7 Utility Functions
-
-- **scale_or_inverse** and **scale_or_inverse_observed_data**: Normalize or reverse-normalize data using specified scalers.
-- **is_leap_year**: Checks if a year is a leap year.
-
-## 5. Adjustable Parameters in Main Function
+## 4. Adjustable Parameters in Main Function
 
 In the __main__ section, users can adjust the following parameters:
 
@@ -134,9 +94,51 @@ Additionally, the following dataset parameters can be adjusted:
 
 Users can modify these parameters to change the behavior of the data generation, augmentation, and training processes.
 
-## 6. Usage Example
+## 5. Usage Example
 
 Below is an example of how to run the script from the command line:
 
 ```bash
 python your_script.py --epochs 200 --batch_size 32 --lr 0.0005 --load_existing --save_path "./trained_models/model" --jar_file "path/to/Velma.jar" --max_memory "4g"
+```
+
+## 6. Key Functions
+
+### 6.1 Data Loading and Processing Functions
+
+- **load_asc_file**: Reads an .asc file and returns its header and data.
+- **load_images_from_samples**: Loads images from given sample paths, each containing multiple channels (DEM, land cover, soil parameters).
+- **load_time_series_from_path** and **load_time_series_from_paths**: Load precipitation and temperature time series data for specified years, handling both single-location and multi-location data models.
+
+### 6.2 Data Augmentation Functions
+
+- **augment_and_save_images**: Augments image data by applying transformations, then saves and returns paths to the augmented files.
+- **augment_and_save_time_series**: Augments precipitation and temperature data by applying random scaling and offsets, then saves and returns paths to the files.
+- **augment_samples**: Combines image, time series, and parameter augmentations to generate XML files with new configurations.
+
+### 6.3 Model Training and Evaluation Functions
+
+- **MainModel**: Combines image, time series, and XML features to generate a watershed feature vector and predict VELMA parameters.
+- **SurrogateModel**: Used to approximate VELMA's outputs using time series data and VELMA parameters as input.
+- **train_model**: Trains both the surrogate and main models sequentially on a given data loader.
+- **calculate_mse_loss**: Calculates the MSE loss between predicted outputs and observed data, accounting for leap years and varying intervals.
+
+### 6.4 Optimization and Visualization Functions
+
+- **optimize_and_visualize**: Optimizes model parameters to fit observed data using the surrogate model and visualizes predictions vs. observed data.
+- **run_and_validate_model**: Modifies an XML configuration with optimized parameters, runs the VELMA model, and visualizes outputs vs. observed data.
+
+### 6.5 XML Handling and Modification Functions
+
+- **modify_years**: Batch updates the start and end years in a list of XML files.
+- **update_param**: Updates XML parameters and synchronizes them with an internal mapping.
+- **get_samples**: Parses XML files and extracts sample information, including file paths and model settings.
+
+### 6.6 Java Process Management Functions
+
+- **run_java_jar**: Runs the VELMA Java program with optional memory limit, captures output in a log, and retrieves the output data path.
+
+### 6.7 Utility Functions
+
+- **scale_or_inverse** and **scale_or_inverse_observed_data**: Normalize or reverse-normalize data using specified scalers.
+- **is_leap_year**: Checks if a year is a leap year.
