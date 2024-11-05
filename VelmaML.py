@@ -172,7 +172,7 @@ def load_time_series_from_path(sample):
             precip_list = []
             temp_list = []
             for _, row in locations_data.iterrows():
-                driver_data_path = row['driverDataFileName']
+                driver_data_path = os.path.join(sample['input_path'],row['driverDataFileName'])
                 point_data = pd.read_csv(driver_data_path)
                 if len(point_data.columns) == 4:
                     point_data.columns = ['Year', 'Jday', 'Precipitation', 'Temperature']
