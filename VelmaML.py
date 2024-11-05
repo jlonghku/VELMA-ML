@@ -192,7 +192,7 @@ def load_time_series_from_path(sample):
 
 
 # Load time series data from multiple sample paths
-def load_time_series_from_paths(samples, observed_end_year=None):
+def load_time_series_from_paths(samples, observed_years=None):
     """
     Load time series data from sample paths and filter them based on the specified year range.
     
@@ -240,11 +240,12 @@ def load_time_series_from_paths(samples, observed_end_year=None):
         all_temps.append(temp[start_index:end_index])
 
         # If observed_end_year is provided, calculate indices up to that year from the original data
-        if observed_end_year is not None:
-            observed_end_index = calculate_day_index(observed_end_year + 1, forcing_start_year)
+        if observed_years is not None:
+            observed_end_index = calculate_day_index(observed_years[1] + 1, forcing_start_year)
+            observed_start_index = calculate_day_index(observed_years[0], forcing_start_year)
             observed_end_index = min(observed_end_index, len(precip), len(temp))  # Ensure within original data length
-            observed_precips.append(precip[start_index:observed_end_index])
-            observed_temps.append(temp[start_index:observed_end_index])
+            observed_precips.append(precip[observed_start_index:observed_end_index])
+            observed_temps.append(temp[observed_start_index:observed_end_index])
     
     # Stack precipitation and temperature arrays and combine them
     all_precips = np.stack(all_precips, axis=0)
@@ -252,7 +253,7 @@ def load_time_series_from_paths(samples, observed_end_year=None):
     time_series = np.stack([all_precips, all_temps], axis=-1)
     
     # Generate observed_time_series if observed_end_year is provided
-    if observed_end_year is not None:
+    if observed_years is not None:
         observed_precips = np.stack(observed_precips, axis=0)
         observed_temps = np.stack(observed_temps, axis=0)
         observed_time_series = np.stack([observed_precips, observed_temps], axis=-1)
@@ -1107,17 +1108,21 @@ def create_dataloader(num_samples, batch_size=64, velma_jar_path='Velma.jar', re
 
     # Load and preprocess observed data
     observed_data = pd.read_csv(observed_data_path, header=None)
-    observed_end_year = int(observed_data.iloc[:, ::3].max().max())
+    observed_year_range = [int(observed_data.iloc[:, ::3].min().min()),int(observed_data.iloc[:, ::3].max().max())]
     observed_data = [
-        observed_data.iloc[:observed_data.iloc[:, i+2].last_valid_index() + 1, [i, i+1, i+2]]
-        .dropna()
-        .rename(columns={i: 'Year', i+1: 'Jday', i+2: 'Variable'})
-        .assign(Year=lambda x: x['Year'].astype(int), Jday=lambda x: x['Jday'].astype(int))
-        for i in range(0, observed_data.shape[1], 3)
+    observed_data.iloc[
+        :observed_data.iloc[:, i+2].last_valid_index() + 1 if observed_data.iloc[:, i+2].last_valid_index() is not None else len(observed_data),
+        [i, i+1, i+2]
     ]
+    .dropna()
+    .rename(columns={i: 'Year', i+1: 'Jday', i+2: 'Variable'})
+    .assign(Year=lambda x: x['Year'].astype(int), Jday=lambda x: x['Jday'].astype(int))
+    for i in range(0, observed_data.shape[1], 3)
+]
+
 
     # Load time series data and observed time series data
-    time_series, observed_time_series = load_time_series_from_paths(samples, observed_end_year=observed_end_year)
+    time_series, observed_time_series = load_time_series_from_paths(samples, observed_years=observed_year_range)
 
     # Normalize outputs, observed data, and parameters
     observed_data, observed_scaler = scale_or_inverse_observed_data(observed_data)
@@ -1260,14 +1265,14 @@ class MainModel(nn.Module):
     - shared_hidden_size: Size of the hidden layer in the shared fully connected layer.
     - velma_hidden_layers: List of hidden layer sizes for the VELMA parameter prediction branch.
     """
-    def __init__(self, num_conv_layers=4, xml_feature_size=128, activation_fn=nn.ReLU, use_dropout=True, dropout_prob=0.3, 
+    def __init__(self, num_conv_layers=4, xml_feature_size=128, activation_fn=nn.ReLU, use_dropout=True, dropout_prob=0.3, surrogate_output_size=1,
                  velma_output_size=3, shared_hidden_size=512, velma_hidden_layers=[128, 64]):
         super(MainModel, self).__init__()
 
         # Image and time series feature extractors
         self.image_feature_extractor = MultiLayerImageFeatureExtractor(input_channels=3, num_layers=num_conv_layers)
         self.time_series_feature_extractor = TimeSeriesFeatureExtractor()
-        self.surrogate_feature_extractor = TimeSeriesFeatureExtractor()  # Surrogate model output feature extractor
+        self.surrogate_feature_extractor = TimeSeriesFeatureExtractor(input_size=surrogate_output_size)  # Surrogate model output feature extractor
         
         self.fc_xml = None
         self.xml_feature_size = xml_feature_size
@@ -1627,26 +1632,26 @@ def calculate_mse_loss(predicted_outputs, observed_data):
         average_intervals.append(np.mean(intervals))
 
     # Assume the end date is day 365 of the maximum year
-    max_year = max(df['Year'].max() for df in observed_data)
-    max_length = max(len(data['Variable']) for data in observed_data)
+    min_year = min(df['Year'].min() for df in observed_data)
 
     all_indices = []
-    # Initialize padded tensors for selected and observed values to match max_length
-    padded_selected_values = torch.full((num_samples, max_length, num_variables), float('nan'), device=predicted_outputs.device)
-    padded_observed_values = torch.full((num_samples, max_length, num_variables), float('nan'), device=predicted_outputs.device)
+    # Initialize padded tensors for selected and observed values
+    padded_selected_values = torch.full((num_samples, timesteps, num_variables), float('nan'), device=predicted_outputs.device)
+    padded_observed_values = torch.full((num_samples,timesteps, num_variables), float('nan'), device=predicted_outputs.device)
 
     # Process each variable in observed data
     for var_idx in range(num_variables):
         years, jdays = observed_data[var_idx]['Year'].values, observed_data[var_idx]['Jday'].values
-        sample_indices = timesteps - ((max_year - years) * 365 + (365 - jdays)) - 1
-        # Adjust for leap years by shifting indices if after February 29
-        sample_indices -= np.array([1 if is_leap_year(year) and jday > 59 else 0 for year, jday in zip(years, jdays)]) 
+        sample_indices = (years - min_year) * 365 + (jdays - 1) + [sum(is_leap_year(y) for y in range(min_year, year)) for year in years]
+
+ 
         all_indices.append(sample_indices)
+
 
         # Smooth predicted outputs if needed, based on average intervals
         kernel_size = max(1, int(average_intervals[var_idx]))
         if kernel_size > 1:
-            smoothed = torch.nn.functional.avg_pool1d(predicted_outputs[:, :, var_idx].unsqueeze(1), kernel_size=kernel_size, stride=1).squeeze(1)
+            smoothed = torch.nn.functional.avg_pool1d(predicted_outputs[:, :, var_idx].unsqueeze(1), kernel_size=kernel_size, stride=1,padding=kernel_size//2).squeeze(1)
             selected_values = smoothed[:, sample_indices]
         else:
             selected_values = predicted_outputs[:, sample_indices, var_idx]
@@ -1675,9 +1680,37 @@ def is_leap_year(year):
     """
     return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
 
+def observed_year_range(start_year, indices):
+    """
+    Calculate the start and end indices for each variable based on the observed year range and indices,
+    and adjust indices by subtracting the corresponding start_index.
+
+    :param start_year: The reference start year of predicted_outputs.
+    :param indices: A list of lists, where each sublist contains indices for a specific variable.
+    :return: A tuple with:
+             - A list of tuples containing (start_index, end_index) for each variable.
+             - A list of adjusted indices for each variable, with each index reduced by start_index.
+    """
+    start_end_indices = []
+    
+
+    for variable_indices in indices:
+        min_index = min(variable_indices)
+        max_index = max(variable_indices)
+        
+        # Calculate start_index and end_index
+        start_index = sum(366 if is_leap_year(year) else 365 for year in range(start_year, start_year + min_index // 365))
+        end_index = sum(366 if is_leap_year(year) else 365 for year in range(start_year, start_year + max_index // 365 + 1))
+        
+        # Adjust indices by subtracting start_index
+        adjusted_variable_indices = [idx - start_index for idx in variable_indices]
+        start_end_indices.append((start_index,end_index,adjusted_variable_indices))
+    
+    return start_end_indices
+
 
 # 7. Model evaluation and visualization
-def optimize_and_visualize(main_model, surrogate_model, dataloader, observed_data, scalers, params_range, criterion=nn.MSELoss(), lr=0.001, epochs=100, use_main_model=False, device='cuda', plot_prediction=True):
+def optimize_and_visualize(main_model, surrogate_model, dataloader, observed_data, scalers, params_range, criterion=nn.MSELoss(), lr=0.01, epochs=10, use_main_model=False, device='cuda', plot_prediction=True):
     """
     Optimizes model parameters to make surrogate model predictions fit observed data, and optionally visualizes the comparison.
     Optionally uses the main model to initialize parameters.
@@ -1760,13 +1793,14 @@ def optimize_and_visualize(main_model, surrogate_model, dataloader, observed_dat
     # Visualize predictions vs. observed data
     predicted_outputs, _ = scale_or_inverse(predicted_outputs.detach().cpu().numpy(), scalers=scalers['output'])
     observed_data, _ = scale_or_inverse_observed_data(observed_data, scalers=scalers['observed'])
-    
+    observed_start_year = min(int(df['Year'].min()) for df in observed_data if 'Year' in df.columns)
+    start_end_indices = observed_year_range(observed_start_year, indices)
+
     if plot_prediction:
-        for i in range(predicted_outputs.shape[2]):
+        for i, (start_index, end_index,observed_index) in enumerate(start_end_indices):
             plt.figure(figsize=(12, 6))
-            plt.plot(predicted_outputs[0, :, i], label="Surrogate Model Predicted (Best Fit)", color='green')
-            plt.scatter(indices[i], observed_data[i]['Variable'], label="Observed Data", color='blue')
-            
+            plt.plot(predicted_outputs[0, start_index:end_index, i], label="Surrogate Model Predicted (Best Fit)", color='green')
+            plt.scatter(observed_index, observed_data[i]['Variable'], label="Observed Data", color='blue')           
             plt.title(f"Best Fit: Surrogate Model Prediction vs Observed Data for Variable {i + 1}")
             plt.xlabel("Time Step")
             plt.ylabel("Output Value")
@@ -1798,8 +1832,8 @@ def run_and_validate_model(best_params, params_range, base_xml_file, new_xml_pat
     """
     
     # Combine params_range and best_params to create param_dict
-    observed_end_year=max(int(df['Year'].max()) for df in observed_data if 'Year' in df.columns)
-    param_dict = {path: value for path, value in zip(params_range.keys(), best_params.mean(axis=0))} | {"./calibration/VelmaInputs.properties/eyear": observed_end_year}
+    observed_year_range = [(int(df['Year'].min()), int(df['Year'].max())) for df in observed_data if 'Year' in df.columns]
+    param_dict = {path: value for path, value in zip(params_range.keys(), best_params.mean(axis=0))} | {"./calibration/VelmaInputs.properties/eyear": observed_year_range[1], "./calibration/VelmaInputs.properties/syear": observed_year_range[0]}
 
     # Load the XML file and modify parameters based on param_dict
     tree = ET.parse(base_xml_file)
@@ -1822,14 +1856,16 @@ def run_and_validate_model(best_params, params_range, base_xml_file, new_xml_pat
     # Load model outputs from the specified path
     outputs = load_outputs_from_paths([output_path + "/DailyResults.csv"], required_columns)
     observed_data, _ = scale_or_inverse_observed_data(observed_data, scalers=scalers['observed'])
+    observed_start_year = min(int(df['Year'].min()) for df in observed_data if 'Year' in df.columns)
+    start_end_indices = observed_year_range(observed_start_year, indices)
     
     # Plot each variable from model outputs against observed data and surrogate predictions
     if plot_comparison:
-        for i in range(outputs.shape[2]):
+        for i, (start_index, end_index,observed_index) in enumerate(start_end_indices):   
             plt.figure(figsize=(12, 6))
-            plt.plot(predicted_outputs[0, :, i], label="Surrogate Model Predicted (Best Fit)", color='green')
-            plt.plot(outputs[0, :, i], label="Model Output", color='red')
-            plt.scatter(indices[i], observed_data[i]['Variable'], label="Observed Data", color='blue')    
+            plt.plot(predicted_outputs[0, start_index:end_index, i], label="Surrogate Model Predicted (Best Fit)", color='green')
+            plt.plot(outputs[0, start_index:end_index, i], label="Model Output", color='red')
+            plt.scatter(observed_index, observed_data[i]['Variable'], label="Observed Data", color='blue')    
             plt.title(f"Comparison: Model Output vs Observed Data for Variable {i}")
             plt.xlabel("Time Step")
             plt.ylabel("Output Value")
@@ -1864,7 +1900,11 @@ if __name__ == "__main__":
     required_columns = [
         'Runoff_All(mm/day)_Delineated_Average',
         'NH4_Loss(gN/day/m2)_Delineated_Average']
-    observed_data_path = "WS10/DataInputs/m_7_Observed/Book2.csv"
+    required_columns = [
+        'Runoff_All(mm/day)_Delineated_Average',
+        'NH4_Loss(gN/day/m2)_Delineated_Average'
+        ]
+    observed_data_path = "WS10\DataInputs\m_7_Observed\Book6.csv"
     year_range = [2010, 2011]
     params_range = {
         './calibration/VelmaCalibration.properties/psm_q': (0.01, 0.02),
@@ -1890,8 +1930,8 @@ if __name__ == "__main__":
     )
 
     # Instantiate models
-    main_model = MainModel().to(device)
-    surrogate_model = SurrogateModel().to(device)
+    main_model = MainModel(surrogate_output_size=len(required_columns)).to(device)
+    surrogate_model = SurrogateModel(output_sizes=[1]*len(required_columns)).to(device)
 
     # Optimizer and loss function
     optimizer_surrogate = torch.optim.Adam(surrogate_model.parameters(), lr=args.lr)
@@ -1933,13 +1973,14 @@ if __name__ == "__main__":
     )
     
     # Run and validate model with optimized parameters
-    print("Run and Validate Model with Optimize Parameters...")
-    run_and_validate_model(
-        best_params, params_range, base_xml_files[0], new_xml_path="modified_config.xml",  
-        required_columns=required_columns, observed_data=observed_data, scalers=scalers, 
-        indices=indices, predicted_outputs=predicted_outputs, plot_comparison=True, 
-        max_memory=args.max_memory
-    )
+    if not True:
+        print("Run and Validate Model with Optimize Parameters...")
+        run_and_validate_model(
+            best_params, params_range, base_xml_files[0], new_xml_path="modified_config.xml",  
+            required_columns=required_columns, observed_data=observed_data, scalers=scalers, 
+            indices=indices, predicted_outputs=predicted_outputs, plot_comparison=True, 
+            max_memory=args.max_memory
+        )
 
     
 
