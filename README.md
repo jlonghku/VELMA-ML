@@ -1,144 +1,147 @@
-# Guide for the VELMA-ML
+# VELMA-ML Model User Manual
 
-## Table of Contents
+This manual provides instructions for preparing data, training the surrogate model, evaluating performance, and optimizing parameters using the machine learning model `SurrogateModel` within the VELMA-ML framework.
 
-- [1. Introduction](#1-introduction)
-- [2. Code Structure Overview](#2-code-structure-overview)
-- [3. Main Function Workflow](#3-main-function-workflow)
-- [4. Adjustable Parameters in Main Function](#4-adjustable-parameters-in-main-function)
-- [5. Usage Example](#5-usage-example)
-- [6. Key Functions](#6-key-functions)
-  - [6.1 Data Loading and Processing Functions](#61-data-loading-and-processing-functions)
-  - [6.2 Data Augmentation Functions](#62-data-augmentation-functions)
-  - [6.3 Model Training and Evaluation Functions](#63-model-training-and-evaluation-functions)
-  - [6.4 Optimization and Visualization Functions](#64-optimization-and-visualization-functions)
-  - [6.5 XML Handling and Modification Functions](#65-xml-handling-and-modification-functions)
-  - [6.6 Java Process Management Functions](#66-java-process-management-functions)
-  - [6.7 Utility Functions](#67-utility-functions)
+---
 
-## 1. Introduction
+## 1. Requirements
 
-This guide describes the structure, key functions, and usage of the code for the VELMA-ML project. It will help users understand how to adjust parameters for their own purposes and how to use the functions effectively. The code is primarily designed to train machine learning models, specifically a main model and a surrogate model, for simulating hydrological outputs and estimating parameters.
+- PyTorch
+- NumPy
+- Pandas
+- Matplotlib
 
-## 2. Code Structure Overview
-
-The code consists of several Python functions and classes, primarily focused on:
-
-- Loading various types of input data (raster images, time series, XML parameters).
-- Augmenting data for model training.
-- Creating models for image, time series, and parameter prediction.
-- Training the models, evaluating their performance, and optimizing parameters.
-
-Key components:
-
-- Data Loading Functions
-- Image and Time Series Feature Extractors
-- Model Definition (Main Model and Surrogate Model)
-- Training and Evaluation Functions
-
-## 3. Main Function Workflow
-
-The main function of the script follows the workflow below:
-
-1. **Parse Command-Line Arguments**: The script starts by parsing command-line arguments, which determine various settings such as the number of training epochs, batch size, learning rate, etc.
-
-2. **Set Dataset Parameters**: Next, the dataset parameters are set, either from default values or based on user inputs. These include flags for using existing data or generating new data, specifying XML files, directories, required columns, and parameter ranges.
-
-3. **Set Random Seed for Reproducibility**: A random seed is set to ensure reproducible results, both for CPU and GPU computations.
-
-4. **Select Device for Computation**: The script selects a computation device (CPU or GPU) depending on availability.
-
-5. **Create DataLoader**: The create_dataloader function is called to load and preprocess the data, including augmentation and normalization. This step returns the data loader, observed data, and scalers for normalization.
-
-6. **Initialize Models**: Both the MainModel and SurrogateModel are instantiated. These models are designed to predict VELMA parameters and approximate VELMA's outputs, respectively.
-
-7. **Set Up Optimizers**: Optimizers for both models are created, using the learning rate specified in the command-line arguments.
-
-8. **Load Pre-trained Models (Optional)**: If specified by the user, pre-trained models are loaded from the designated save path.
-
-9. **Train Models**: The train_model function is called to train both the main and surrogate models. The surrogate model is trained first, followed by the main model, using the training data provided by the data loader.
-
-10. **Optimize Parameters**: Once training is complete, the optimize_and_visualize function is used to optimize model parameters to fit the observed data. This involves adjusting the surrogate model's parameters to minimize the error between predicted outputs and observed data.
-
-11. **Run and Validate Model**: Finally, the run_and_validate_model function modifies the XML configuration with optimized parameters, runs the VELMA model using the Java JAR file, and compares the model outputs to observed data.
-
-
-## 4. Adjustable Parameters in Main Function
-
-In the __main__ section, users can adjust the following parameters:
-
-- **--epochs**: Total number of training epochs (default: 100).
-- **--batch_size**: Size of each batch for training and data loading (default: 64).
-- **--lr**: Learning rate for the optimizer (default: 1e-3).
-- **--load_existing**: Load pre-trained models if available (default: False).
-- **--save_path**: Path to save trained models (default: ./trained_models/model).
-- **--jar_file**: Path to the VELMA simulation JAR file (default: Velma.jar).
-- **--max_memory**: Maximum memory allocation for Java process (e.g., 2g for 2 GB).
-- **--seed**: Random seed for reproducibility (default: 43).
-
-Additionally, the following dataset parameters can be adjusted:
-
-- **use_existing_data**: Boolean flag to indicate whether to use existing data.
-- **generate_new_data**: Boolean flag to indicate whether to generate new data.
-- **num_samples**: Tuple specifying the number of augmentations for images, time series, and parameters.
-- **LHS_samples**: Number of samples to select using Latin Hypercube Sampling.
-- **base_xml_files**: List of XML files used as templates for generating samples.
-- **output_dirs**: List of directories containing existing output data.
-- **required_columns**: List of columns from DailyResults.csv required for model output.
-- **observed_data_path**: Path to the CSV file containing observed data for comparison. The CSV file should be formatted with columns in the following order: ['Year', 'Jday', 'Variable']. Specifically:
-  - Year: Represents the calendar year of each observation (e.g., 2020, 2021). This helps to track the temporal sequence across multiple years.
-  - Jday: Stands for Julian day, indicating the specific day of the year (from 1 to 365 or 366 for leap years). This allows for daily granularity in tracking observations.
-  - Variable: Represents the observed values of interest, such as runoff, soil moisture, or other environmental measurements. This column contains the data points for the specific parameter being analyzed, ensuring a consistent format across all observations.
-- **year_range**: List specifying the start and end year for data filtering.
-- **params_range**: Dictionary specifying the range of values for XML parameters to be modified during augmentation.
-
-Users can modify these parameters to change the behavior of the data generation, augmentation, and training processes.
-
-## 5. Usage Example
-
-Below is an example of how to run the script from the command line:
+Install dependencies:
 
 ```bash
-python your_script.py --epochs 200 --batch_size 32 --lr 0.0005 --load_existing --save_path "./trained_models/model" --jar_file "path/to/Velma.jar" --max_memory "4g"
+pip install torch numpy pandas matplotlib
 ```
 
-## 6. Key Functions
+---
 
-### 6.1 Data Loading and Processing Functions
+## 2. Workflow Overview
 
-- **load_asc_file**: Reads an .asc file and returns its header and data.
-- **load_images_from_samples**: Loads images from given sample paths, each containing multiple channels (DEM, land cover, soil parameters).
-- **load_time_series_from_path** and **load_time_series_from_paths**: Load precipitation and temperature time series data for specified years, handling both single-location and multi-location data models.
+The main script performs the following steps:
 
-### 6.2 Data Augmentation Functions
+1. **Load and Slice Dataset**  
+   Loads `dataset_velma_low.pt` and selects a sample slice.
 
-- **augment_and_save_images**: Augments image data by applying transformations, then saves and returns paths to the augmented files.
-- **augment_and_save_time_series**: Augments precipitation and temperature data by applying random scaling and offsets, then saves and returns paths to the files.
-- **augment_samples**: Combines image, time series, and parameter augmentations to generate XML files with new configurations.
+2. **Preprocess Data**  
+   Scales and splits the dataset into training and testing loaders.
 
-### 6.3 Model Training and Evaluation Functions
+3. **Instantiate Model**  
+   Builds the `SurrogateModel` with sizes derived from the dataset.
 
-- **MainModel**: Combines image, time series, and XML features to generate a watershed feature vector and predict VELMA parameters.
-- **SurrogateModel**: Used to approximate VELMA's outputs using time series data and VELMA parameters as input.
-- **train_model**: Trains both the surrogate and main models sequentially on a given data loader.
-- **calculate_mse_loss**: Calculates the MSE loss between predicted outputs and observed data, accounting for leap years and varying intervals.
+4. **Train Model**  
+   Trains the surrogate model with user-defined hyperparameters.
 
-### 6.4 Optimization and Visualization Functions
+5. **Evaluate Model**  
+   Compares model predictions with test data.
 
-- **optimize_and_visualize**: Optimizes model parameters to fit observed data using the surrogate model and visualizes predictions vs. observed data.
-- **run_and_validate_model**: Modifies an XML configuration with optimized parameters, runs the VELMA model, and visualizes outputs vs. observed data.
+6. **Optimize Parameters [optional]**  
+   Uses observed and climate data to optimize model parameters.
 
-### 6.5 XML Handling and Modification Functions
+---
 
-- **modify_years**: Batch updates the start and end years in a list of XML files.
-- **update_param**: Updates XML parameters and synchronizes them with an internal mapping.
-- **get_samples**: Parses XML files and extracts sample information, including file paths and model settings.
+## 3. Data Preparation
 
-### 6.6 Java Process Management Functions
+- Input file: `dataset_velma_low.pt` (PyTorch `TensorDataset`)
+  - Tensor order: `[date, climate_inputs, outputs, parameters]`
+- Observed and climate CSVs for further prediction:  
+  - `climate.csv`  
+  - `observed.csv`
 
-- **run_java_jar**: Runs the VELMA Java program with optional memory limit, captures output in a log, and retrieves the output data path.
+### Advanced Usage
 
-### 6.7 Utility Functions
+In addition to the basic usage (train with a period of model data and then predict for longer time spans), the tool also supports **advanced strategies** depending on how data is prepared and how training is performed:
 
-- **scale_or_inverse** and **scale_or_inverse_observed_data**: Normalize or reverse-normalize data using specified scalers.
-- **is_leap_year**: Checks if a year is a leap year.
+- **Residual Learning**  
+  - Prepare paired outputs from high-resolution and low-resolution simulations.  
+  - Compute the residual (difference) between high-resolution and low-resolution outputs.  
+  - Train the surrogate model to predict this residual.  
+  - During actual prediction, add the residual prediction back to the low-resolution output to reconstruct the original high-resolution result.  
+
+- **Transfer Learning**  
+  - Train the model on low-resolution data first.  
+  - Then fine-tune the model with a smaller set of high-resolution data.  
+  - This can be done by loading a previously trained model in the training function, or by manually freezing shared layers while retraining.  
+  - The result is a surrogate model aligned with high-resolution outputs at much lower computational cost.  
+
+
+---
+
+## 4. Key Functions
+
+### `pre_dataloader(dataset, batch_size, scaler_types, split_index)`
+- Scales dataset with specified scalers (`'none'`, `'standard'`, `'minmax'`).
+- Splits into training and test sets.
+- Returns `train_loader`, `test_loader`, and `scalers`.
+
+### `train_model(model, train_loader, lr, epochs, save, load, device, chunk_size)`
+- Trains the surrogate model.
+- Supports checkpoint saving/loading.
+- Returns loss history.
+
+### `evaluate_model(model, test_loader, scalers, device)`
+- Evaluates model predictions vs. test data.
+- Produces plots and saves results.
+
+### `optimize_and_visualize(model, scalers, year_range, climate_path, observed_path, epochs, lr, required_columns, device)`
+- Optimizes model parameters against observed data.
+- Visualizes predictions vs. observations.
+- Returns best predicted outputs and parameters.
+
+---
+
+## 5. Example Run
+
+```python
+# preprocess
+train_loader, test_loader, scalers = pre_dataloader(
+    dataset, batch_size=32,
+    scaler_types=['none','none','standard','minmax'],
+    split_index=0.5
+)
+
+# train
+train_model(model, train_loader, lr=1e-4, epochs=10,
+            save="./trained_models/base_model.pth",
+            device=device, chunk_size=32)
+
+# evaluate
+evaluate_model(model, test_loader, scalers, device=device)
+
+# optimize
+predicted_outputs, best_params = optimize_and_visualize(
+    model, scalers, [2010, 2019],
+    "climate.csv", "observed.csv",
+    epochs=5, lr=0.001,
+    required_columns=[
+        'Runoff_All(mm/day)_Delineated_Average',
+        'NO3_Loss(gN/day/m2)_Delineated_Average',
+    ],
+    device=device
+)
+```
+
+---
+
+## 6. Output
+
+- **Model checkpoints**: `./trained_models/base_model.pth`
+- **Evaluation plots**: Predictions vs. Observations
+- **CSV**: `output/predictions_vs_targets.csv`
+- **Optimized parameters**: printed in console
+
+---
+
+## 7. Notes
+
+- Ensure observed and climate CSV files cover the `year_range`.
+- Adjust `scaler_types` according to data features:
+  - `'none'` for dates/indices
+  - `'standard'` for outputs
+  - `'minmax'` for parameters
+- GPU training is used if CUDA is available.
+
+---
